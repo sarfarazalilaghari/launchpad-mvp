@@ -30,22 +30,40 @@ export function serveStatic(app: Express) {
     throw new Error(`index.html not found at ${indexPath}`);
   }
 
-  // Serve static assets
+  // Pre-read index.html to ensure it's available
+  let indexHtmlContent = "";
+  try {
+    indexHtmlContent = fs.readFileSync(indexPath, "utf-8");
+    console.log("✅ Preloaded index.html, size:", indexHtmlContent.length, "bytes");
+  } catch (err) {
+    console.error("❌ Failed to preload index.html:", err);
+    throw err;
+  }
+
+  // Serve static assets with explicit content type handling
   app.use(
     express.static(distPath, {
       maxAge: "1d",
+      index: false, // Disable automatic index.html serving
       setHeaders: (res, filepath) => {
         if (filepath.endsWith(".html")) {
           res.setHeader("Content-Type", "text/html; charset=utf-8");
           res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+          res.setHeader("X-Content-Type-Options", "nosniff");
+        } else if (filepath.endsWith(".js")) {
+          res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+        } else if (filepath.endsWith(".css")) {
+          res.setHeader("Content-Type", "text/css; charset=utf-8");
         }
       },
     })
   );
 
-  // SPA routing - serve index.html for all routes
-  app.use("*", (req, res) => {
+  // SPA routing - serve index.html for all unmatched routes
+  app.use("*", (_req, res) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.sendFile(indexPath);
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(indexHtmlContent);
   });
 }
