@@ -1,69 +1,59 @@
 import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
+
+let indexHtmlContent = "";
 
 export function serveStatic(app: Express) {
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-  const possiblePaths = [
-    path.resolve(process.cwd(), "dist", "public"),
-    path.resolve(__dirname, "..", "dist", "public"),
-    "/vercel/path0/dist/public",
-  ];
-
-  let distPath = null;
-  for (const tryPath of possiblePaths) {
-    if (fs.existsSync(tryPath)) {
-      distPath = tryPath;
-      console.log("✅ Found build directory:", distPath);
-      break;
-    }
-  }
-
-  if (!distPath) {
-    throw new Error(`Build directory not found in: ${possiblePaths.join(", ")}`);
-  }
-
+  const distPath = path.resolve(process.cwd(), "dist", "public");
   const indexPath = path.resolve(distPath, "index.html");
-  if (!fs.existsSync(indexPath)) {
-    throw new Error(`index.html not found at ${indexPath}`);
-  }
 
-  // Pre-read index.html to ensure it's available
-  let indexHtmlContent = "";
+  console.log("🔧 serveStatic called with distPath:", distPath);
+
   try {
-    indexHtmlContent = fs.readFileSync(indexPath, "utf-8");
-    console.log("✅ Preloaded index.html, size:", indexHtmlContent.length, "bytes");
+    // Check if files exist
+    if (!fs.existsSync(distPath)) {
+      console.error("❌ dist/public not found at:", distPath);
+      console.log("📁 Current directory:", process.cwd());
+      console.log("📁 Files in current directory:", fs.readdirSync(process.cwd()));
+      // Don't throw - continue anyway
+    }
+
+    if (!fs.existsSync(indexPath)) {
+      console.error("❌ index.html not found at:", indexPath);
+      // Don't throw - continue anyway
+    } else {
+      // Load HTML once at startup
+      indexHtmlContent = fs.readFileSync(indexPath, "utf-8");
+      console.log("✅ Loaded index.html:", indexHtmlContent.length, "bytes");
+    }
+
+    // Serve static files
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath, { index: false }));
+      console.log("✅ Static middleware configured for:", distPath);
+    }
   } catch (err) {
-    console.error("❌ Failed to preload index.html:", err);
-    throw err;
+    console.error("⚠️ Error in serveStatic:", err);
   }
 
-  // Serve static assets with explicit content type handling
-  app.use(
-    express.static(distPath, {
-      maxAge: "1d",
-      index: false, // Disable automatic index.html serving
-      setHeaders: (res, filepath) => {
-        if (filepath.endsWith(".html")) {
-          res.setHeader("Content-Type", "text/html; charset=utf-8");
-          res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-          res.setHeader("X-Content-Type-Options", "nosniff");
-        } else if (filepath.endsWith(".js")) {
-          res.setHeader("Content-Type", "application/javascript; charset=utf-8");
-        } else if (filepath.endsWith(".css")) {
-          res.setHeader("Content-Type", "text/css; charset=utf-8");
-        }
-      },
-    })
-  );
-
-  // SPA routing - serve index.html for all unmatched routes
-  app.use("*", (_req, res) => {
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.send(indexHtmlContent);
+  // Always add the SPA fallback route - this is critical
+  app.use("*", (req, res) => {
+    // If we have the HTML content, send it
+    if (indexHtmlContent) {
+      console.log("📄 Sending preloaded HTML for:", req.path);
+      res.type("text/html").send(indexHtmlContent);
+    } else {
+      // Fallback: try to read and send
+      try {
+        const indexPath = path.resolve(process.cwd(), "dist", "public", "index.html");
+        const html = fs.readFileSync(indexPath, "utf-8");
+        console.log("📄 Sending HTML from disk for:", req.path);
+        res.type("text/html").send(html);
+      } catch (err) {
+        console.error("❌ Cannot serve HTML for", req.path, ":", err);
+        res.status(500).type("text/html").send("<h1>Error: Could not load application</h1>");
+      }
+    }
   });
 }
