@@ -1,5 +1,6 @@
-const { execSync } = require("child_process");
-const { rmSync, readFileSync } = require("fs");
+import { execSync } from "child_process";
+import { rmSync, readFileSync } from "fs";
+import { buildSync } from "esbuild";
 
 console.log("🔨 Building LaunchPad MVP...");
 
@@ -48,8 +49,6 @@ const allDeps = [
   ...Object.keys(pkg.devDependencies || {}),
 ];
 const externals = allDeps.filter((dep) => !allowlist.includes(dep));
-
-const { buildSync } = require("esbuild");
 
 buildSync({
   entryPoints: ["server/index.ts"],
